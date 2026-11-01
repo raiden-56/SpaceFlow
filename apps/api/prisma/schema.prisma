@@ -1,0 +1,848 @@
+// SpaceFlow database schema.
+// All timestamps are stored in UTC (timestamptz). Buildings carry an IANA timezone used to
+// interpret operating hours and local booking days.
+//
+// Reservation overlap protection is enforced by a PostgreSQL EXCLUDE constraint
+// (btree_gist) declared in migrations/*_reservation_exclusion/migration.sql because Prisma
+// cannot express exclusion constraints in the schema language.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum RoleCode {
+  EMPLOYEE
+  WORKPLACE_ADMIN
+  ORG_ADMIN
+  APPROVER
+}
+
+enum UserStatus {
+  INVITED
+  ACTIVE
+  DEACTIVATED
+}
+
+enum ResourceType {
+  SEAT
+  MEETING_ROOM
+}
+
+enum ResourceStatus {
+  ACTIVE
+  DISABLED
+  MAINTENANCE
+}
+
+enum SeatType {
+  WORKSTATION
+  HOT_DESK
+  STANDING
+  PHONE_BOOTH
+}
+
+enum RoomType {
+  MEETING
+  CONFERENCE
+  HUDDLE
+  BOARDROOM
+  TRAINING
+}
+
+enum ZoneKind {
+  NEIGHBORHOOD
+  QUIET
+  COLLABORATION
+  GENERAL
+}
+
+enum AmenityCategory {
+  SEAT
+  ROOM
+  BOTH
+}
+
+enum ReservationStatus {
+  PENDING_APPROVAL
+  CONFIRMED
+  CHECKED_IN
+  COMPLETED
+  CANCELLED
+  REJECTED
+  NO_SHOW
+  RELEASED
+}
+
+enum CheckInMethod {
+  QR
+  MANUAL
+  ADMIN
+}
+
+enum CheckInKind {
+  IN
+  OUT
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum NotificationType {
+  BOOKING_CONFIRMED
+  BOOKING_CANCELLED
+  BOOKING_MODIFIED
+  BOOKING_REMINDER
+  CHECKIN_REMINDER
+  NO_SHOW_WARNING
+  BOOKING_RELEASED
+  APPROVAL_REQUESTED
+  APPROVAL_DECIDED
+  RESOURCE_MAINTENANCE
+  ANNOUNCEMENT
+}
+
+enum MapObjectKind {
+  DESK
+  MEETING_ROOM
+  PRIVATE_OFFICE
+  COLLAB_SPACE
+  RECEPTION
+  ELEVATOR
+  STAIRS
+  RESTROOM
+  CAFETERIA
+  PRINTER
+  ACCESSIBLE_ROUTE
+  EMERGENCY_EXIT
+  WALL
+  ZONE
+  OTHER
+}
+
+enum FloorPlanStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum AssetKind {
+  BUILDING_MODEL
+  FLOOR_MODEL
+  FLOOR_PLAN_IMAGE
+}
+
+enum IntegrationProvider {
+  MS365_CALENDAR
+  GOOGLE_CALENDAR
+  MS_TEAMS
+  EMAIL_SMTP
+  SSO_OIDC
+  QR_CHECKIN
+}
+
+enum IntegrationStatus {
+  NOT_CONFIGURED
+  READY
+  ERROR
+  DISABLED
+}
+
+enum PreferredView {
+  THREE_D
+  TWO_D
+  LIST
+}
+
+enum JobStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+// ---------------------------------------------------------------------------
+// Organization, people, access control
+// ---------------------------------------------------------------------------
+
+model Organization {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String   @unique
+  timezone  String   @default("UTC")
+  settings  Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  users         User[]
+  buildings     Building[]
+  departments   Department[]
+  amenities     Amenity[]
+  policies      BookingPolicy[]
+  resources     Resource[]
+  reservations  Reservation[]
+  assets        Asset[]
+  auditLogs     AuditLog[]
+  integrations  IntegrationConfig[]
+  announcements Announcement[]
+
+  @@map("organizations")
+}
+
+model User {
+  id                     String     @id @default(uuid()) @db.Uuid
+  orgId                  String     @map("org_id") @db.Uuid
+  email                  String     @unique
+  passwordHash           String?    @map("password_hash")
+  firstName              String     @map("first_name")
+  lastName               String     @map("last_name")
+  avatarUrl              String?    @map("avatar_url")
+  phone                  String?
+  jobTitle               String?    @map("job_title")
+  status                 UserStatus @default(INVITED)
+  departmentId           String?    @map("department_id") @db.Uuid
+  teamId                 String?    @map("team_id") @db.Uuid
+  homeBuildingId         String?    @map("home_building_id") @db.Uuid
+  inviteTokenHash        String?    @map("invite_token_hash")
+  inviteExpiresAt        DateTime?  @map("invite_expires_at") @db.Timestamptz(6)
+  passwordResetTokenHash String?    @map("password_reset_token_hash")
+  passwordResetExpiresAt DateTime?  @map("password_reset_expires_at") @db.Timestamptz(6)
+  ssoSubject             String?    @map("sso_subject")
+  lastLoginAt            DateTime?  @map("last_login_at") @db.Timestamptz(6)
+  createdAt              DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt              DateTime?  @map("deleted_at") @db.Timestamptz(6)
+
+  organization  Organization   @relation(fields: [orgId], references: [id])
+  department    Department?    @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  team          Team?          @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  homeBuilding  Building?      @relation("UserHomeBuilding", fields: [homeBuildingId], references: [id], onDelete: SetNull)
+  roles         UserRole[]
+  preferences   UserPreference?
+  refreshTokens RefreshToken[]
+  reservations  Reservation[]  @relation("ReservationUser")
+  createdReservations Reservation[] @relation("ReservationCreatedBy")
+  cancelledReservations Reservation[] @relation("ReservationCancelledBy")
+  favorites     Favorite[]
+  notifications Notification[]
+  auditLogs     AuditLog[]
+  attendees     ReservationAttendee[]
+  checkIns      CheckInRecord[]
+  approvalsRequested ApprovalRequest[] @relation("ApprovalRequester")
+  approvalsDecided   ApprovalRequest[] @relation("ApprovalApprover")
+  uploadedAssets Asset[]
+
+  @@index([orgId])
+  @@index([departmentId])
+  @@index([teamId])
+  @@index([status])
+  @@map("users")
+}
+
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        RoleCode @unique
+  name        String
+  description String?
+
+  permissions RolePermission[]
+  users       UserRole[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String @id @default(uuid()) @db.Uuid
+  code        String @unique
+  description String?
+
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String @map("role_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  userId     String   @map("user_id") @db.Uuid
+  roleId     String   @map("role_id") @db.Uuid
+  assignedAt DateTime @default(now()) @map("assigned_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model Department {
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  name      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  teams        Team[]
+  users        User[]
+
+  @@unique([orgId, name])
+  @@map("departments")
+}
+
+model Team {
+  id           String   @id @default(uuid()) @db.Uuid
+  departmentId String   @map("department_id") @db.Uuid
+  name         String
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  users      User[]
+
+  @@unique([departmentId, name])
+  @@map("teams")
+}
+
+model UserPreference {
+  userId                String        @id @map("user_id") @db.Uuid
+  defaultBuildingId     String?       @map("default_building_id") @db.Uuid
+  defaultFloorId        String?       @map("default_floor_id") @db.Uuid
+  shareLocationWithTeam Boolean       @default(true) @map("share_location_with_team")
+  emailNotifications    Boolean       @default(true) @map("email_notifications")
+  preferredView         PreferredView @default(THREE_D) @map("preferred_view")
+  reducedMotion         Boolean       @default(false) @map("reduced_motion")
+  updatedAt             DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_preferences")
+}
+
+model RefreshToken {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  tokenHash    String    @unique @map("token_hash")
+  expiresAt    DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt    DateTime? @map("revoked_at") @db.Timestamptz(6)
+  replacedById String?   @map("replaced_by_id") @db.Uuid
+  userAgent    String?   @map("user_agent")
+  ip           String?
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// Workplace: buildings, floors, floor plans, map objects, zones
+// ---------------------------------------------------------------------------
+
+model Building {
+  id           String    @id @default(uuid()) @db.Uuid
+  orgId        String    @map("org_id") @db.Uuid
+  name         String
+  code         String
+  addressLine  String?   @map("address_line")
+  city         String?
+  country      String?
+  timezone     String    @default("UTC")
+  isActive     Boolean   @default(true) @map("is_active")
+  description  String?
+  modelAssetId String?   @map("model_asset_id") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  organization Organization    @relation(fields: [orgId], references: [id])
+  modelAsset   Asset?          @relation("BuildingModelAsset", fields: [modelAssetId], references: [id], onDelete: SetNull)
+  floors       Floor[]
+  resources    Resource[]
+  policies     BookingPolicy[]
+  homeUsers    User[]          @relation("UserHomeBuilding")
+  announcements Announcement[]
+
+  @@unique([orgId, code])
+  @@index([orgId, isActive])
+  @@map("buildings")
+}
+
+model Floor {
+  id          String    @id @default(uuid()) @db.Uuid
+  buildingId  String    @map("building_id") @db.Uuid
+  name        String
+  number      Int
+  sortOrder   Int       @default(0) @map("sort_order")
+  isPublished Boolean   @default(false) @map("is_published")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  building  Building   @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  floorPlan FloorPlan?
+  zones     Zone[]
+  resources Resource[]
+
+  @@unique([buildingId, number])
+  @@index([buildingId, sortOrder])
+  @@map("floors")
+}
+
+model FloorPlan {
+  id           String          @id @default(uuid()) @db.Uuid
+  floorId      String          @unique @map("floor_id") @db.Uuid
+  widthM       Float           @map("width_m")
+  depthM       Float           @map("depth_m")
+  status       FloorPlanStatus @default(DRAFT)
+  version      Int             @default(1)
+  imageAssetId String?         @map("image_asset_id") @db.Uuid
+  modelAssetId String?         @map("model_asset_id") @db.Uuid
+  publishedAt  DateTime?       @map("published_at") @db.Timestamptz(6)
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  floor      Floor       @relation(fields: [floorId], references: [id], onDelete: Cascade)
+  imageAsset Asset?      @relation("FloorPlanImageAsset", fields: [imageAssetId], references: [id], onDelete: SetNull)
+  modelAsset Asset?      @relation("FloorPlanModelAsset", fields: [modelAssetId], references: [id], onDelete: SetNull)
+  objects    MapObject[]
+
+  @@map("floor_plans")
+}
+
+model MapObject {
+  id          String        @id @default(uuid()) @db.Uuid
+  floorPlanId String        @map("floor_plan_id") @db.Uuid
+  kind        MapObjectKind
+  label       String?
+  x           Float
+  y           Float
+  width       Float
+  depth       Float
+  rotation    Float         @default(0)
+  height      Float?
+  resourceId  String?       @unique @map("resource_id") @db.Uuid
+  meta        Json?
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  floorPlan FloorPlan @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
+  resource  Resource? @relation(fields: [resourceId], references: [id], onDelete: SetNull)
+
+  @@index([floorPlanId, kind])
+  @@map("map_objects")
+}
+
+model Zone {
+  id        String   @id @default(uuid()) @db.Uuid
+  floorId   String   @map("floor_id") @db.Uuid
+  name      String
+  kind      ZoneKind @default(GENERAL)
+  color     String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  floor     Floor      @relation(fields: [floorId], references: [id], onDelete: Cascade)
+  resources Resource[]
+
+  @@unique([floorId, name])
+  @@map("zones")
+}
+
+model Asset {
+  id           String    @id @default(uuid()) @db.Uuid
+  orgId        String    @map("org_id") @db.Uuid
+  kind         AssetKind
+  fileName     String    @map("file_name")
+  mimeType     String    @map("mime_type")
+  sizeBytes    Int       @map("size_bytes")
+  storagePath  String    @map("storage_path")
+  checksum     String
+  uploadedById String?   @map("uploaded_by_id") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  uploadedBy   User?        @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  buildings    Building[]   @relation("BuildingModelAsset")
+  floorPlanImages FloorPlan[] @relation("FloorPlanImageAsset")
+  floorPlanModels FloorPlan[] @relation("FloorPlanModelAsset")
+
+  @@index([orgId, kind])
+  @@map("assets")
+}
+
+// ---------------------------------------------------------------------------
+// Resources (seats + meeting rooms), amenities, restrictions
+// ---------------------------------------------------------------------------
+
+model Resource {
+  id                      String         @id @default(uuid()) @db.Uuid
+  orgId                   String         @map("org_id") @db.Uuid
+  buildingId              String         @map("building_id") @db.Uuid
+  floorId                 String         @map("floor_id") @db.Uuid
+  zoneId                  String?        @map("zone_id") @db.Uuid
+  type                    ResourceType
+  code                    String
+  name                    String
+  description             String?
+  status                  ResourceStatus @default(ACTIVE)
+  isBookable              Boolean        @default(true) @map("is_bookable")
+  requiresApproval        Boolean        @default(false) @map("requires_approval")
+  capacity                Int?
+  seatType                SeatType?      @map("seat_type")
+  roomType                RoomType?      @map("room_type")
+  accessible              Boolean        @default(false)
+  seatAttributes          Json?          @map("seat_attributes")
+  operatingHours          Json?          @map("operating_hours")
+  maxDurationMinutes      Int?           @map("max_duration_minutes")
+  checkInRequired         Boolean?       @map("check_in_required")
+  restrictedDepartmentIds String[]       @default([]) @map("restricted_department_ids") @db.Uuid
+  restrictedTeamIds       String[]       @default([]) @map("restricted_team_ids") @db.Uuid
+  searchText              String?        @map("search_text")
+  createdAt               DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt               DateTime?      @map("deleted_at") @db.Timestamptz(6)
+
+  organization Organization        @relation(fields: [orgId], references: [id])
+  building     Building            @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  floor        Floor               @relation(fields: [floorId], references: [id], onDelete: Cascade)
+  zone         Zone?               @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+  amenities    ResourceAmenity[]
+  mapObject    MapObject?
+  reservations Reservation[]
+  maintenance  MaintenanceWindow[]
+  favorites    Favorite[]
+
+  @@unique([buildingId, code])
+  @@index([floorId, type, status])
+  @@index([orgId, type])
+  @@index([zoneId])
+  @@map("resources")
+}
+
+model Amenity {
+  id        String          @id @default(uuid()) @db.Uuid
+  orgId     String          @map("org_id") @db.Uuid
+  code      String
+  name      String
+  category  AmenityCategory @default(BOTH)
+  icon      String?
+  createdAt DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization      @relation(fields: [orgId], references: [id])
+  resources    ResourceAmenity[]
+
+  @@unique([orgId, code])
+  @@map("amenities")
+}
+
+model ResourceAmenity {
+  resourceId String @map("resource_id") @db.Uuid
+  amenityId  String @map("amenity_id") @db.Uuid
+
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  amenity  Amenity  @relation(fields: [amenityId], references: [id], onDelete: Cascade)
+
+  @@id([resourceId, amenityId])
+  @@index([amenityId])
+  @@map("resource_amenities")
+}
+
+model MaintenanceWindow {
+  id         String   @id @default(uuid()) @db.Uuid
+  resourceId String   @map("resource_id") @db.Uuid
+  startAt    DateTime @map("start_at") @db.Timestamptz(6)
+  endAt      DateTime @map("end_at") @db.Timestamptz(6)
+  reason     String?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@index([resourceId, startAt, endAt])
+  @@map("maintenance_windows")
+}
+
+// ---------------------------------------------------------------------------
+// Booking policies
+// ---------------------------------------------------------------------------
+
+model BookingPolicy {
+  id                          String        @id @default(uuid()) @db.Uuid
+  orgId                       String        @map("org_id") @db.Uuid
+  buildingId                  String?       @map("building_id") @db.Uuid
+  resourceType                ResourceType? @map("resource_type")
+  name                        String
+  advanceBookingDays          Int           @default(30) @map("advance_booking_days")
+  minDurationMinutes          Int           @default(30) @map("min_duration_minutes")
+  maxDurationMinutes          Int           @default(600) @map("max_duration_minutes")
+  slotMinutes                 Int           @default(30) @map("slot_minutes")
+  maxActiveReservations       Int           @default(10) @map("max_active_reservations")
+  maxDailyBookings            Int           @default(3) @map("max_daily_bookings")
+  maxWeeklyBookings           Int           @default(15) @map("max_weekly_bookings")
+  operatingStart              String        @default("07:00") @map("operating_start")
+  operatingEnd                String        @default("20:00") @map("operating_end")
+  allowWeekends               Boolean       @default(false) @map("allow_weekends")
+  cancellationDeadlineMinutes Int           @default(0) @map("cancellation_deadline_minutes")
+  checkInRequired             Boolean       @default(true) @map("check_in_required")
+  checkInGraceMinutes         Int           @default(30) @map("check_in_grace_minutes")
+  checkInOpensMinutesBefore   Int           @default(15) @map("check_in_opens_minutes_before")
+  autoReleaseEnabled          Boolean       @default(true) @map("auto_release_enabled")
+  allowRecurring              Boolean       @default(true) @map("allow_recurring")
+  maxRecurringOccurrences     Int           @default(12) @map("max_recurring_occurrences")
+  allowMultiDay               Boolean       @default(true) @map("allow_multi_day")
+  isActive                    Boolean       @default(true) @map("is_active")
+  createdAt                   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                   DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  building     Building?    @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, buildingId, resourceType, isActive])
+  @@map("booking_policies")
+}
+
+// ---------------------------------------------------------------------------
+// Reservations
+// ---------------------------------------------------------------------------
+
+model ReservationSeries {
+  id        String   @id @default(uuid()) @db.Uuid
+  rule      Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  reservations Reservation[]
+
+  @@map("reservation_series")
+}
+
+model Reservation {
+  id            String            @id @default(uuid()) @db.Uuid
+  orgId         String            @map("org_id") @db.Uuid
+  resourceId    String            @map("resource_id") @db.Uuid
+  userId        String            @map("user_id") @db.Uuid
+  createdById   String?           @map("created_by_id") @db.Uuid
+  type          ResourceType
+  status        ReservationStatus @default(CONFIRMED)
+  title         String?
+  description   String?
+  setupNotes    String?           @map("setup_notes")
+  startAt       DateTime          @map("start_at") @db.Timestamptz(6)
+  endAt         DateTime          @map("end_at") @db.Timestamptz(6)
+  timezone      String
+  isAllDay      Boolean           @default(false) @map("is_all_day")
+  seriesId      String?           @map("series_id") @db.Uuid
+  checkInCode   String            @unique @map("check_in_code")
+  checkedInAt   DateTime?         @map("checked_in_at") @db.Timestamptz(6)
+  checkedOutAt  DateTime?         @map("checked_out_at") @db.Timestamptz(6)
+  cancelledAt   DateTime?         @map("cancelled_at") @db.Timestamptz(6)
+  cancelledById String?           @map("cancelled_by_id") @db.Uuid
+  cancelReason  String?           @map("cancel_reason")
+  reminderSentAt DateTime?        @map("reminder_sent_at") @db.Timestamptz(6)
+  checkInReminderSentAt DateTime? @map("check_in_reminder_sent_at") @db.Timestamptz(6)
+  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization         @relation(fields: [orgId], references: [id])
+  resource     Resource             @relation(fields: [resourceId], references: [id])
+  user         User                 @relation("ReservationUser", fields: [userId], references: [id])
+  createdBy    User?                @relation("ReservationCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  cancelledBy  User?                @relation("ReservationCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
+  series       ReservationSeries?   @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+  attendees    ReservationAttendee[]
+  checkIns     CheckInRecord[]
+  approval     ApprovalRequest?
+  calendarLinks CalendarEventLink[]
+
+  @@index([userId, startAt])
+  @@index([resourceId, startAt, endAt])
+  @@index([orgId, status, startAt])
+  @@index([seriesId])
+  @@index([startAt, endAt])
+  @@map("reservations")
+}
+
+model ReservationAttendee {
+  id            String  @id @default(uuid()) @db.Uuid
+  reservationId String  @map("reservation_id") @db.Uuid
+  userId        String? @map("user_id") @db.Uuid
+  email         String?
+  name          String?
+
+  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  user        User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([reservationId])
+  @@map("reservation_attendees")
+}
+
+model CheckInRecord {
+  id            String        @id @default(uuid()) @db.Uuid
+  reservationId String        @map("reservation_id") @db.Uuid
+  userId        String?       @map("user_id") @db.Uuid
+  method        CheckInMethod
+  kind          CheckInKind
+  at            DateTime      @default(now()) @db.Timestamptz(6)
+
+  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  user        User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([reservationId])
+  @@map("check_in_records")
+}
+
+model ApprovalRequest {
+  id            String         @id @default(uuid()) @db.Uuid
+  reservationId String         @unique @map("reservation_id") @db.Uuid
+  requestedById String         @map("requested_by_id") @db.Uuid
+  approverId    String?        @map("approver_id") @db.Uuid
+  status        ApprovalStatus @default(PENDING)
+  decisionNote  String?        @map("decision_note")
+  decidedAt     DateTime?      @map("decided_at") @db.Timestamptz(6)
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  requestedBy User        @relation("ApprovalRequester", fields: [requestedById], references: [id])
+  approver    User?       @relation("ApprovalApprover", fields: [approverId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@map("approval_requests")
+}
+
+model CalendarEventLink {
+  id              String              @id @default(uuid()) @db.Uuid
+  reservationId   String              @map("reservation_id") @db.Uuid
+  provider        IntegrationProvider
+  externalEventId String              @map("external_event_id")
+  lastSyncedAt    DateTime            @default(now()) @map("last_synced_at") @db.Timestamptz(6)
+
+  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+
+  @@unique([reservationId, provider])
+  @@map("calendar_event_links")
+}
+
+// ---------------------------------------------------------------------------
+// Notifications, favorites, announcements
+// ---------------------------------------------------------------------------
+
+model Notification {
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  type      NotificationType
+  title     String
+  body      String
+  data      Json?
+  readAt    DateTime?        @map("read_at") @db.Timestamptz(6)
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+  @@map("notifications")
+}
+
+model Favorite {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  resourceId String   @map("resource_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, resourceId])
+  @@map("favorites")
+}
+
+model Announcement {
+  id          String    @id @default(uuid()) @db.Uuid
+  orgId       String    @map("org_id") @db.Uuid
+  buildingId  String?   @map("building_id") @db.Uuid
+  title       String
+  body        String
+  publishedAt DateTime  @default(now()) @map("published_at") @db.Timestamptz(6)
+  expiresAt   DateTime? @map("expires_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  building     Building?    @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, publishedAt])
+  @@map("announcements")
+}
+
+// ---------------------------------------------------------------------------
+// Audit, integrations, jobs
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  actorId    String?  @map("actor_id") @db.Uuid
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
+  before     Json?
+  after      Json?
+  ip         String?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  actor        User?        @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, createdAt])
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@map("audit_logs")
+}
+
+model IntegrationConfig {
+  id           String              @id @default(uuid()) @db.Uuid
+  orgId        String              @map("org_id") @db.Uuid
+  provider     IntegrationProvider
+  isEnabled    Boolean             @default(false) @map("is_enabled")
+  config       Json                @default("{}")
+  status       IntegrationStatus   @default(NOT_CONFIGURED)
+  lastError    String?             @map("last_error")
+  lastSyncedAt DateTime?           @map("last_synced_at") @db.Timestamptz(6)
+  createdAt    DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [orgId], references: [id])
+
+  @@unique([orgId, provider])
+  @@map("integration_configs")
+}
+
+model JobRun {
+  id         String    @id @default(uuid()) @db.Uuid
+  name       String
+  status     JobStatus
+  startedAt  DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  finishedAt DateTime? @map("finished_at") @db.Timestamptz(6)
+  details    Json?
+
+  @@index([name, startedAt])
+  @@map("job_runs")
+}

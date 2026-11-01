@@ -1,0 +1,77 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: spaceflow-db
+    environment:
+      POSTGRES_USER: spaceflow
+      POSTGRES_PASSWORD: spaceflow
+      POSTGRES_DB: spaceflow
+    ports:
+      # 5444 on the host avoids clashing with other local PostgreSQL instances.
+      - "5444:5432"
+    volumes:
+      - spaceflow-pgdata:/var/lib/postgresql/data
+      - ./infrastructure/docker/postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U spaceflow -d spaceflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: spaceflow-redis
+    profiles: ["redis"]
+    ports:
+      - "6380:6379"
+
+  # Full stack: docker compose --profile full up --build
+  # Runs in production mode, so real JWT secrets are required (set them in .env or the shell).
+  api:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/api.Dockerfile
+    container_name: spaceflow-api
+    profiles: ["full"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://spaceflow:spaceflow@postgres:5432/spaceflow?schema=public
+      API_PORT: 4000
+      # The browser reaches the API through nginx in the web container (same origin).
+      API_BASE_URL: http://localhost:${WEB_PORT:-8080}
+      WEB_ORIGIN: http://localhost:${WEB_PORT:-8080}
+      UPLOAD_DIR: /app/uploads
+      LOG_LEVEL: info
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set JWT_ACCESS_SECRET to 48+ random bytes for the full stack}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?set JWT_REFRESH_SECRET to 48+ random bytes for the full stack}
+    ports:
+      - "${API_HOST_PORT:-4000}:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - spaceflow-uploads:/app/uploads
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/web.Dockerfile
+      args:
+        # Empty = same origin through the nginx /api proxy (keeps the refresh cookie first-party).
+        VITE_API_URL: ""
+    container_name: spaceflow-web
+    profiles: ["full"]
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  spaceflow-pgdata:
+  spaceflow-uploads:

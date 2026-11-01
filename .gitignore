@@ -1,0 +1,14 @@
+node_modules/
+dist/
+build/
+coverage/
+.env
+.env.local
+.env.*.local
+*.log
+apps/api/uploads/
+tests/e2e/.auth/
+test-results/
+playwright-report/
+.DS_Store
+Thumbs.db

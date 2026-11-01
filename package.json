@@ -1,0 +1,36 @@
+{
+  "name": "spaceflow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SpaceFlow - Smart Office Booking & 3D Workplace Management Platform",
+  "packageManager": "pnpm@11.18.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel --filter ./apps/* dev",
+    "dev:api": "pnpm --filter @spaceflow/api dev",
+    "dev:web": "pnpm --filter @spaceflow/web dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "test:unit": "pnpm --filter @spaceflow/api test:unit && pnpm --filter @spaceflow/web test",
+    "test:api": "pnpm --filter @spaceflow/api test",
+    "test:web": "pnpm --filter @spaceflow/web test",
+    "test:e2e": "playwright test --config tests/e2e/playwright.config.ts",
+    "e2e:install": "playwright install chromium",
+    "verify": "pnpm typecheck && pnpm test:unit && pnpm build",
+    "db:up": "docker compose up -d postgres",
+    "db:migrate": "pnpm --filter @spaceflow/api db:migrate",
+    "db:seed": "pnpm --filter @spaceflow/api db:seed",
+    "db:reset": "pnpm --filter @spaceflow/api db:reset",
+    "openapi:export": "pnpm --filter @spaceflow/api openapi:export",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md,yml,yaml}\""
+  },
+  "devDependencies": {
+    "@playwright/test": "1.58.2",
+    "prettier": "3.8.1",
+    "typescript": "5.9.3"
+  }
+}
