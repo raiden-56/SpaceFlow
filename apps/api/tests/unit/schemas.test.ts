@@ -1,5 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { loginSchema, policySchema, reservationCreateSchema, resourceListQuerySchema, floorPlanUpsertSchema, seatCsvRowSchema } from '@spaceflow/shared';
+import {
+  amenityUpdateSchema,
+  buildingCreateSchema,
+  buildingUpdateSchema,
+  floorPlanUpsertSchema,
+  floorUpdateSchema,
+  loginSchema,
+  policySchema,
+  policyUpdateSchema,
+  reservationCreateSchema,
+  resourceListQuerySchema,
+  roomUpdateSchema,
+  seatCsvRowSchema,
+  seatUpdateSchema,
+  userCreateSchema,
+  userUpdateSchema,
+  zoneUpdateSchema,
+} from '@spaceflow/shared';
 
 describe('shared validation schemas', () => {
   it('reservationCreateSchema rejects end before start and applies defaults', () => {
@@ -46,5 +63,27 @@ describe('shared validation schemas', () => {
     expect(row.nearWindow).toBe(true);
     expect(row.monitor).toBe(false);
     expect(row.x).toBe(2.5);
+  });
+
+  it('update schemas only return fields that were sent (no defaults)', () => {
+    const updateSchemas = { buildingUpdateSchema, floorUpdateSchema, zoneUpdateSchema, seatUpdateSchema, roomUpdateSchema, amenityUpdateSchema, policyUpdateSchema, userUpdateSchema };
+    for (const [name, schema] of Object.entries(updateSchemas)) {
+      expect(schema.parse({}), name).toEqual({});
+    }
+    expect(buildingUpdateSchema.parse({ name: 'HQ' })).toEqual({ name: 'HQ' });
+    expect(userUpdateSchema.parse({ jobTitle: 'Lead' })).toEqual({ jobTitle: 'Lead' });
+    expect(policyUpdateSchema.parse({ allowWeekends: true })).toEqual({ allowWeekends: true });
+  });
+
+  it('update schemas still validate fields that were sent', () => {
+    expect(buildingUpdateSchema.safeParse({ isActive: 'yes' }).success).toBe(false);
+    expect(userUpdateSchema.safeParse({ roles: [] }).success).toBe(false);
+    expect(policyUpdateSchema.safeParse({ operatingStart: '25:00' }).success).toBe(false);
+    expect(floorUpdateSchema.parse({ isPublished: false, sortOrder: 2 })).toEqual({ isPublished: false, sortOrder: 2 });
+  });
+
+  it('create schemas keep their defaults', () => {
+    expect(buildingCreateSchema.parse({ name: 'HQ', code: 'HQ', timezone: 'UTC' }).isActive).toBe(true);
+    expect(userCreateSchema.parse({ email: 'a@b.co', firstName: 'A', lastName: 'B' }).roles).toEqual(['EMPLOYEE']);
   });
 });

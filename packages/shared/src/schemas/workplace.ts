@@ -12,6 +12,7 @@ import {
   csvList,
   dateOnlySchema,
   paginationQuerySchema,
+  partialUpdate,
   timeOnlySchema,
 } from './common.js';
 
@@ -48,7 +49,7 @@ export const buildingCreateSchema = z.object({
   isActive: z.boolean().default(true),
   description: z.string().max(500).optional().nullable(),
 });
-export const buildingUpdateSchema = buildingCreateSchema.partial();
+export const buildingUpdateSchema = partialUpdate(buildingCreateSchema);
 export type BuildingInput = z.infer<typeof buildingCreateSchema>;
 
 export const floorCreateSchema = z.object({
@@ -56,7 +57,7 @@ export const floorCreateSchema = z.object({
   number: z.number().int().min(-10).max(200),
   isPublished: z.boolean().default(false),
 });
-export const floorUpdateSchema = floorCreateSchema.partial().extend({
+export const floorUpdateSchema = partialUpdate(floorCreateSchema).extend({
   sortOrder: z.number().int().optional(),
 });
 export const floorReorderSchema = z.object({ floorIds: z.array(z.string().uuid()).min(1) });
@@ -70,7 +71,7 @@ export const zoneCreateSchema = z.object({
     .optional()
     .nullable(),
 });
-export const zoneUpdateSchema = zoneCreateSchema.partial();
+export const zoneUpdateSchema = partialUpdate(zoneCreateSchema);
 
 export const resourceBaseSchema = z.object({
   code: z.string().min(1).max(30),
@@ -98,14 +99,14 @@ export const seatCreateSchema = resourceBaseSchema.extend({
   seatAttributes: seatAttributesSchema.optional(),
   seatType: z.enum(SeatTypes).default('WORKSTATION'),
 });
-export const seatUpdateSchema = seatCreateSchema.partial();
+export const seatUpdateSchema = partialUpdate(seatCreateSchema);
 export type SeatInput = z.infer<typeof seatCreateSchema>;
 export const roomCreateSchema = resourceBaseSchema.extend({
   capacity: z.number().int().min(1).max(500),
   roomType: z.enum(RoomTypes).default('MEETING'),
   accessible: z.boolean().optional(),
 });
-export const roomUpdateSchema = roomCreateSchema.partial();
+export const roomUpdateSchema = partialUpdate(roomCreateSchema);
 export type RoomInput = z.infer<typeof roomCreateSchema>;
 
 export const bulkResourceUpdateSchema = z.object({
@@ -195,7 +196,7 @@ export const amenityCreateSchema = z.object({
   category: z.enum(['SEAT', 'ROOM', 'BOTH']).default('BOTH'),
   icon: z.string().max(40).optional().nullable(),
 });
-export const amenityUpdateSchema = amenityCreateSchema.partial();
+export const amenityUpdateSchema = partialUpdate(amenityCreateSchema);
 
 export const maintenanceWindowSchema = z.object({
   startAt: z.string().datetime({ offset: true }),
