@@ -32,7 +32,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
             <Button variant="contained" onClick={() => window.location.reload()}>
               Reload
             </Button>
-            <Button onClick={() => { this.setState({ error: null }); window.location.assign('/'); }}>Go to home</Button>
+            <Button onClick={() => { this.setState({ error: null }); window.location.assign(import.meta.env.BASE_URL); }}>Go to home</Button>
           </Stack>
         </Stack>
       </Box>

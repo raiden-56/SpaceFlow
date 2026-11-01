@@ -20,7 +20,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <LocalizationProvider dateAdapter={AdapterDayjs}>
           <MotionConfig reducedMotion="user" transition={{ duration: 0.22, ease: 'easeOut' }}>
             <ToastProvider>
-              <BrowserRouter>
+              <BrowserRouter basename={import.meta.env.BASE_URL}>
                 <ErrorBoundary>
                   <App />
                 </ErrorBoundary>
