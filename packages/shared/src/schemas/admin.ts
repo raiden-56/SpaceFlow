@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { IntegrationProviders, ResourceTypes, RoleCodes, SeatTypes, UserStatuses } from '../enums.js';
-import { dateOnlySchema, paginationQuerySchema, timeOnlySchema } from './common.js';
+import { dateOnlySchema, paginationQuerySchema, partialUpdate, timeOnlySchema } from './common.js';
 import { passwordSchema } from './auth.js';
 
 export const policySchema = z.object({
@@ -42,7 +42,7 @@ export const policySchema = z.object({
   allowMultiDay: z.boolean().default(true),
   isActive: z.boolean().default(true),
 });
-export const policyUpdateSchema = policySchema.partial();
+export const policyUpdateSchema = partialUpdate(policySchema);
 export type PolicyInput = z.infer<typeof policySchema>;
 
 export const userCreateSchema = z.object({
@@ -57,10 +57,9 @@ export const userCreateSchema = z.object({
   /** When provided the account is active immediately; otherwise an invitation is issued. */
   password: passwordSchema.optional(),
 });
-export const userUpdateSchema = userCreateSchema
-  .omit({ password: true })
-  .partial()
-  .extend({ status: z.enum(UserStatuses).optional() });
+export const userUpdateSchema = partialUpdate(userCreateSchema.omit({ password: true })).extend({
+  status: z.enum(UserStatuses).optional(),
+});
 
 export const userListQuerySchema = paginationQuerySchema.extend({
   q: z.string().max(100).optional(),
