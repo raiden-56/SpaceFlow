@@ -223,13 +223,18 @@ function UserDialog({ open, user, onClose, onInvited }: { open: boolean; user: A
   const [form, setForm] = useState(() => blank(user));
   const [setPassword, setSetPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [lastUser, setLastUser] = useState<AdminUserDto | null | undefined>(undefined);
-  if (open && lastUser !== user) {
-    setLastUser(user);
+  // Reset the form every time the dialog opens (not only when the user changes), so cancelled
+  // edits don't reappear. While closing, keep showing the last user so the title doesn't flip.
+  const [session, setSession] = useState<{ open: boolean; user: AdminUserDto | null }>({ open: false, user });
+  if (open && (!session.open || session.user !== user)) {
+    setSession({ open: true, user });
     setForm(blank(user));
     setSetPassword(false);
     setError(null);
+  } else if (!open && session.open) {
+    setSession({ open: false, user: session.user });
   }
+  const shownUser = open ? user : session.user;
   function blank(u: AdminUserDto | null) {
     return { email: u?.email ?? '', firstName: u?.firstName ?? '', lastName: u?.lastName ?? '', jobTitle: u?.jobTitle ?? '', departmentId: u?.departmentId ?? '', teamId: u?.teamId ?? '', homeBuildingId: u?.homeBuildingId ?? '', roles: (u?.roles ?? ['EMPLOYEE']) as RoleCode[], password: '' };
   }
@@ -255,7 +260,7 @@ function UserDialog({ open, user, onClose, onInvited }: { open: boolean; user: A
   };
   return (
     <Dialog open={open} onClose={busy ? undefined : onClose} fullWidth maxWidth="sm" aria-labelledby="user-dialog-title">
-      <DialogTitle id="user-dialog-title">{user ? `Edit ${user.displayName}` : 'Add employee'}</DialogTitle>
+      <DialogTitle id="user-dialog-title">{shownUser ? `Edit ${shownUser.displayName}` : 'Add employee'}</DialogTitle>
       <DialogContent dividers>
         <Stack spacing={2}>
           {error && <Alert severity="error">{error}</Alert>}
@@ -306,7 +311,7 @@ function UserDialog({ open, user, onClose, onInvited }: { open: boolean; user: A
             </Grid>
           </Grid>
           {!canAssignAdmin && <Typography variant="caption" color="text.secondary">Only organization administrators can grant administrator roles.</Typography>}
-          {!user && (
+          {!shownUser && (
             <>
               <FormControlLabel control={<Switch checked={setPassword} onChange={(e) => setSetPassword(e.target.checked)} />} label="Set a password now instead of sending an invitation" />
               {setPassword && <TextField label="Initial password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} helperText="At least 8 characters with a letter and a number" />}
@@ -317,7 +322,7 @@ function UserDialog({ open, user, onClose, onInvited }: { open: boolean; user: A
       <DialogActions sx={{ px: 3, py: 2 }}>
         <Button color="inherit" onClick={onClose} disabled={busy}>Cancel</Button>
         <Button variant="contained" onClick={submit} disabled={busy || !form.email || !form.firstName || !form.lastName || form.roles.length === 0} startIcon={busy ? <CircularProgress size={14} color="inherit" /> : undefined}>
-          {user ? 'Save' : setPassword ? 'Create account' : 'Send invitation'}
+          {shownUser ? 'Save' : setPassword ? 'Create account' : 'Send invitation'}
         </Button>
       </DialogActions>
     </Dialog>
