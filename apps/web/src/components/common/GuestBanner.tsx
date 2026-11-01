@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useLogoutMutation } from '@/services/endpoints';
 import { dayjs } from '@/utils/time';
+import { DEMO_MODE } from '@/demo';
 
 /** Shown in both portals while a guest sandbox session is active. */
 export function GuestBanner() {
@@ -26,6 +27,7 @@ export function GuestBanner() {
         }
       >
         <strong>Guest mode.</strong> You are exploring a private sandbox with sample buildings, desks, rooms, colleagues and bookings. Everything works, including the admin portal, and your sandbox is deleted automatically{expires ? ` ${expires}` : ''}.
+        {DEMO_MODE && ' This demo runs entirely in your browser; changes are kept on this device only.'}
       </Alert>
     </Collapse>
   );

@@ -12,6 +12,7 @@ import QrCodeRoundedIcon from '@mui/icons-material/QrCodeRounded';
 import type { ResourceDto } from '@spaceflow/shared';
 import { useCancelReservationMutation, useCheckInMutation, useCheckOutMutation, useReservationQrQuery, useReservationQuery, useResourceQuery } from '@/services/endpoints';
 import { API_BASE, errorMessage } from '@/services/api';
+import { apiFetch } from '@/demo';
 import { useAppSelector } from '@/store';
 import { PageHeader } from '@/components/common/PageHeader';
 import { PageTransition } from '@/components/common/Motion';
@@ -72,7 +73,7 @@ export function BookingDetailPage() {
   };
   const addToCalendar = async () => {
     try {
-      const res = await fetch(`${API_BASE}/reservations/${b.id}/ics`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await apiFetch(`${API_BASE}/reservations/${b.id}/ics`, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) throw new Error('Could not generate the calendar file');
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);

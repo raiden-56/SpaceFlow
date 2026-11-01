@@ -8,6 +8,7 @@ import VisibilityOffRoundedIcon from '@mui/icons-material/VisibilityOffRounded';
 import { loginSchema, type LoginInput } from '@spaceflow/shared';
 import { useGuestLoginMutation, useGuestStatusQuery, useLoginMutation, useSsoStatusQuery } from '@/services/endpoints';
 import { errorMessage, API_BASE } from '@/services/api';
+import { DEMO_MODE } from '@/demo';
 
 export function LoginPage() {
   const [login, { isLoading, error }] = useLoginMutation();
@@ -41,6 +42,11 @@ export function LoginPage() {
       {params.get('error') === 'sso_no_account' && (
         <Alert severity="warning" sx={{ mb: 2 }}>
           Your SSO identity is not linked to a SpaceFlow account. Ask an administrator to invite you.
+        </Alert>
+      )}
+      {DEMO_MODE && (
+        <Alert severity="info" sx={{ mb: 2 }} data-testid="demo-notice">
+          This is a live demo without a backend. Choose <strong>Continue as guest</strong> to explore SpaceFlow with sample buildings, desks, rooms and bookings.
         </Alert>
       )}
       {(error || guestError) && (
@@ -108,7 +114,7 @@ export function LoginPage() {
           </>
         )}
       </Stack>
-      {import.meta.env.DEV && (
+      {import.meta.env.DEV && !DEMO_MODE && (
         <Alert severity="info" role="note" sx={{ mt: 3 }} icon={false}>
           <Typography variant="caption" component="div">
             <strong>Demo accounts</strong> (seeded): employee@spaceflow.local / Password123! · admin@spaceflow.local / Admin123!

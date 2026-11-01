@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { RealtimeEvent } from '@spaceflow/shared';
 import { api, API_BASE } from './api';
 import { useAppDispatch, useAppSelector } from '@/store';
+import { DEMO_MODE } from '@/demo';
 
 type Listener = (ev: RealtimeEvent) => void;
 const listeners = new Set<Listener>();
@@ -24,7 +25,8 @@ export function useRealtime() {
   const stoppedRef = useRef(false);
 
   useEffect(() => {
-    if (!token) return;
+    // Demo mode has no event stream; mutations already invalidate the affected tags.
+    if (!token || DEMO_MODE) return;
     stoppedRef.current = false;
 
     const connect = async () => {

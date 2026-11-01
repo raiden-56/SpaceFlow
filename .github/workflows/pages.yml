@@ -1,9 +1,10 @@
 name: Deploy web to GitHub Pages
 
 # Builds apps/web and publishes it to https://<owner>.github.io/<repo>/.
-# Pages hosts static files only: set the repository variable VITE_API_URL
-# (Settings > Secrets and variables > Actions > Variables) to the public API origin
-# once the backend is hosted, then re-run this workflow.
+# Pages hosts static files only. Until the repository variable VITE_API_URL is set
+# (Settings > Secrets and variables > Actions > Variables), the site is built in demo mode:
+# the API runs in the browser on sample data and guest mode works without a backend.
+# Once the backend is hosted, set VITE_API_URL to its public origin and re-run this workflow.
 on:
   push:
     branches: [master, main]
@@ -40,6 +41,7 @@ jobs:
         env:
           VITE_BASE_PATH: /${{ github.event.repository.name }}/
           VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_DEMO_MODE: ${{ vars.VITE_API_URL == '' }}
       # Pages has no SPA history fallback: serve index.html for unknown paths so deep links work.
       - run: cp apps/web/dist/index.html apps/web/dist/404.html
       - uses: actions/upload-pages-artifact@v3

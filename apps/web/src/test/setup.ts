@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 
 // jsdom lacks matchMedia / ResizeObserver used by MUI + framer-motion.
-if (!window.matchMedia) {
+if (typeof window !== 'undefined' && !window.matchMedia) {
   window.matchMedia = (query: string) =>
     ({
       matches: false,
@@ -14,7 +14,7 @@ if (!window.matchMedia) {
       dispatchEvent: () => false,
     }) as MediaQueryList;
 }
-if (!window.ResizeObserver) {
+if (typeof window !== 'undefined' && !window.ResizeObserver) {
   class RO {
     observe() {}
     unobserve() {}

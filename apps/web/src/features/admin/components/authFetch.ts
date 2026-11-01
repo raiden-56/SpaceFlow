@@ -1,10 +1,11 @@
 import { API_BASE } from '@/services/api';
 import { store } from '@/store';
+import { apiFetch } from '@/demo';
 
 /** Authenticated fetch for non-JSON endpoints (CSV / ICS downloads, templates). */
 export async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const token = store.getState().auth.accessToken;
-  return fetch(`${API_BASE}${path}`, {
+  return apiFetch(`${API_BASE}${path}`, {
     ...init,
     credentials: 'include',
     headers: { ...(init.headers ?? {}), ...(token ? { Authorization: `Bearer ${token}` } : {}), 'X-Requested-With': 'SpaceFlow' },

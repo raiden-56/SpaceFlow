@@ -2,6 +2,7 @@ import { createApi, fetchBaseQuery, type BaseQueryFn, type FetchArgs, type Fetch
 import { API_PREFIX, type ApiErrorBody, type AuthResponseDto } from '@spaceflow/shared';
 import { sessionEnded, sessionStarted, tokenRefreshed } from '@/store/authSlice';
 import type { RootState } from '@/store';
+import { DEMO_MODE, apiFetch } from '@/demo';
 
 /**
  * Absolute API base. When VITE_API_URL is empty the app talks to its own origin (Vite proxy in
@@ -35,6 +36,7 @@ const mutex = new Mutex();
 const rawBaseQuery = fetchBaseQuery({
   baseUrl: API_BASE,
   credentials: 'include',
+  fetchFn: DEMO_MODE ? apiFetch : undefined,
   prepareHeaders: (headers, { getState }) => {
     const token = (getState() as RootState).auth.accessToken;
     if (token) headers.set('Authorization', `Bearer ${token}`);
@@ -56,7 +58,7 @@ export function refreshSession(dispatch: (a: unknown) => unknown): Promise<AuthR
   if (!inFlightRefresh) {
     inFlightRefresh = (async () => {
       try {
-        const res = await fetch(`${API_BASE}/auth/refresh`, {
+        const res = await apiFetch(`${API_BASE}/auth/refresh`, {
           method: 'POST',
           credentials: 'include',
           headers: { 'X-Requested-With': 'SpaceFlow' },
